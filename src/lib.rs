@@ -1,7 +1,7 @@
 //! A collection of anagram utility functions
 //!
 //! ## Installation
-//! Add `anagram = 0.3.0` to your Cargo.toml
+//! Add `anagram = 0.5.0` to your Cargo.toml
 //!
 //! ## Examples
 //! ```
@@ -10,7 +10,7 @@
 //! fn main() {
 //!   // count how many anagrams can be formed from a given word
 //!   let anagram_count = count("ordeals");
-//!   assert_eq!(anagram_count, 5040);
+//!   assert_eq!(anagram_count, Some(5040));
 //!
 //!   // count the number of occurences of an anagram in a given word
 //!   let occur = occurences("helloworldhello", "ll");
@@ -25,8 +25,8 @@
 //!   assert_eq!(next, "abcdegf");
 //!
 //!   // get all anagrams of a word
-//!   let mut word: String = String::from("abc");
-//!   for _ in 0..count(&word) {
+//!   let mut word = String::from("abc");
+//!   for _ in 0..count(&word).unwrap() {
 //!     // get next anagram
 //!     word = get_next(&word);
 //!     println!("{}", word);
@@ -36,64 +36,53 @@
 use counter::Counter;
 use std::{collections::HashSet, str::from_utf8};
 
-static ASCII_LOWER: [char; 26] = [
-  'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-  't', 'u', 'v', 'w', 'x', 'y', 'z',
-];
-
-fn factorial(n: u128) -> u128 {
-  if n <= 1 {
-    1
-  } else {
-    n * factorial(n - 1)
-  }
+#[must_use]
+fn factorial(n: u8) -> Option<u128> {
+  (1..=(n.into())).try_fold(1, u128::checked_mul)
 }
 
 /// Count the number of anagrams that can be formed from a word
-pub fn count(word: &str) -> u128 {
+#[must_use]
+pub fn count(word: &str) -> Option<u128> {
   let mut unique = HashSet::new();
-  let count: usize = word.chars().count();
 
+  let mut divisor: u128 = 1;
+
+  let char_counts = word.chars().collect::<Counter<_>>();
+
+  let mut char_count: usize = 0;
   for c in word.chars() {
-    unique.insert(c);
-  }
-
-  if unique.len() == count {
-    factorial(count as u128)
-  } else {
-    let mut seen = HashSet::new();
-
-    let mut divisor: u128 = 1;
-
-    let char_counts = word.chars().collect::<Counter<_>>();
-
-    for c in word.chars() {
-      if !seen.contains(&c) {
-        divisor *= char_counts[&c] as u128;
-        seen.insert(c);
-      }
+    char_count += 1;
+    if unique.insert(c) {
+      divisor *= char_counts[&c] as u128;
     }
-
-    factorial(count as u128) / divisor
   }
+
+  factorial(char_count as _).map(|c| {
+    debug_assert!(c.is_multiple_of(divisor));
+    c / divisor
+  })
+}
+
+#[must_use]
+const fn all_zero(s: &[i64]) -> bool {
+  let mut i = 0;
+  while i < s.len() {
+    if s[i] != 0 {
+      return false;
+    }
+    i += 1;
+  }
+  true
 }
 
 /// Count the number of occurences of an anagram in a word
+#[must_use]
 pub fn occurences(word: &str, input: &str) -> u128 {
   let len_word = word.chars().count();
   let len_input = input.chars().count();
 
-  // Check if all counts are zero
-  let is_zero = |count: &[i64]| {
-    for val in count.iter() {
-      if *val != 0 {
-        return false;
-      }
-    }
-    true
-  };
-
-  let mut count: [i64; 256 as usize] = [0; 256 as usize];
+  let mut count = [0_i64; 0x100];
 
   for val in 0..len_input {
     count[word.as_bytes()[val] as usize] += 1;
@@ -104,7 +93,7 @@ pub fn occurences(word: &str, input: &str) -> u128 {
   }
 
   let mut result: u128 = 0;
-  result += is_zero(&count) as u128;
+  result += u128::from(all_zero(&count));
 
   for i in len_input..len_word {
     // add last character
@@ -113,50 +102,49 @@ pub fn occurences(word: &str, input: &str) -> u128 {
     // remove first character
     count[word.as_bytes()[i - len_input] as usize] -= 1;
 
-    result += is_zero(&count) as u128;
+    result += u128::from(all_zero(&count));
   }
   result
 }
 
 /// Check if a word is an anagram of another word
+#[must_use]
 pub fn is_anagram(left: &str, right: &str) -> bool {
   if left.chars().count() != right.chars().count() {
-    false
-  } else {
-    let mut count: [i32; 26 as usize] = [0; 26 as usize];
-
-    for c in left.chars() {
-      let pos = if let Some(val) = c.to_digit(10) {
-        val as usize
-      } else {
-        ASCII_LOWER
-          .iter()
-          .position(|&x| x == c.to_lowercase().nth(0).unwrap())
-          .unwrap() as usize
-      };
-
-      count[pos] += 1;
-    }
-
-    for c in right.chars() {
-      let pos = if let Some(val) = c.to_digit(10) {
-        val as usize
-      } else {
-        ASCII_LOWER
-          .iter()
-          .position(|&x| x == c.to_lowercase().nth(0).unwrap())
-          .unwrap() as usize
-      };
-
-      count[pos] -= 1;
-
-      if count[pos] < 0 {
-        return false;
-      }
-    }
-
-    true
+    return false;
   }
+
+  let mut count = [0_isize; 26];
+
+  for c in left.chars() {
+    let pos = if let Some(val) = c.to_digit(10) {
+      val as usize
+    } else {
+      ('a'..='z')
+        .position(|x| x == c.to_lowercase().next().unwrap())
+        .unwrap()
+    };
+
+    count[pos] += 1;
+  }
+
+  for c in right.chars() {
+    let pos = if let Some(val) = c.to_digit(10) {
+      val as usize
+    } else {
+      ('a'..='z')
+        .position(|x| x == c.to_lowercase().next().unwrap())
+        .unwrap()
+    };
+
+    count[pos] -= 1;
+
+    if count[pos] < 0 {
+      return false;
+    }
+  }
+
+  true
 }
 
 /// Get the next lexicographically greater permutation
@@ -166,6 +154,7 @@ pub fn is_anagram(left: &str, right: &str) -> bool {
 /// Examples:
 /// "abc" -> "acb"
 /// "cba" -> "abc"
+#[must_use]
 pub fn get_next(word: &str) -> String {
   let mut i = word.chars().count() - 1;
 
@@ -181,7 +170,7 @@ pub fn get_next(word: &str) -> String {
   // return the lexicographically smallest one
   if i == 0 {
     let mut chars: Vec<char> = word.chars().collect();
-    chars.sort();
+    chars.sort_unstable();
     return chars.into_iter().collect();
   }
 
@@ -202,7 +191,7 @@ pub fn get_next(word: &str) -> String {
 
   // sort right half
   let mut right_half: Vec<u8> = word_as_bytes[i..word.chars().count()].to_vec();
-  right_half.sort();
+  right_half.sort_unstable();
 
   // merge back and return as a String
   from_utf8(&[&word_as_bytes[0..i], &right_half].concat())
@@ -216,22 +205,25 @@ mod tests {
 
   #[test]
   fn test_factorial() {
-    assert_eq!(factorial(1), 1);
-    assert_eq!(factorial(2 * 2), 24);
-    assert_eq!(factorial(14), 87178291200);
-    assert_eq!(factorial(12), 479001600);
+    assert_eq!(factorial(1), Some(1));
+    assert_eq!(factorial(2 * 2), Some(24));
+    assert_eq!(factorial(14), Some(87178291200));
+    assert_eq!(factorial(12), Some(479001600));
   }
 
   #[test]
   fn test_anagram_count() {
-    assert_eq!(count("at"), 2);
-    assert_eq!(count("ordeals"), 5040);
+    assert_eq!(count("at"), Some(2));
+    assert_eq!(count("ordeals"), Some(5040));
     assert_eq!(
       count("abcdefghijklmnopqrstuvwxyz"),
-      403291461126605635584000000
+      Some(403291461126605635584000000)
     );
-    assert_eq!(count("abcdefghijklmabcdefghijklm"), 49229914688306352000000);
-    assert_eq!(count("abcdABCDabcd"), 29937600);
+    assert_eq!(
+      count("abcdefghijklmabcdefghijklm"),
+      Some(49229914688306352000000)
+    );
+    assert_eq!(count("abcdABCDabcd"), Some(29937600));
   }
 
   #[test]
