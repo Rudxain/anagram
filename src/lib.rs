@@ -84,7 +84,7 @@ pub fn occurences(word: &str, input: &str) -> u128 {
 
   let mut count = [0_i64; 0x100];
 
-  for val in 0..len_input {
+  for val in 0..len_word {
     count[word.as_bytes()[val] as usize] += 1;
   }
 
